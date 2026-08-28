@@ -11,7 +11,7 @@ def test_admin_files_exist_and_are_split_by_responsibility():
 
 def test_admin_uses_non_destructive_key_validation():
     js = (ROOT / 'admin' / 'admin.js').read_text(encoding='utf-8')
-    assert "rpc('validate_cms_password', { p_key: key })" in js
+    assert '/rest/v1/rpc/validate_cms_password' in js
     assert "x-cms-key" in js
     assert "sessionStorage" in js
     assert ".update({content:data.content})" not in js
@@ -25,7 +25,7 @@ def test_admin_edits_all_live_sections_in_site_order():
         'insights', 'footer'
     ]:
         assert f"'{key}'" in js
-    assert "order('sort_order')" in js
+    assert 'order=sort_order.asc' in js
 
 
 def test_admin_supports_buttons_links_and_image_uploads():
@@ -40,3 +40,17 @@ def test_admin_supports_buttons_links_and_image_uploads():
 def test_admin_does_not_embed_the_cms_password():
     all_text = ''.join((ROOT / 'admin' / f).read_text(encoding='utf-8') for f in ['index.html','admin.js','admin.css'])
     assert 'ECMS-' not in all_text
+
+def test_login_does_not_depend_on_supabase_cdn():
+    html = (ROOT / 'admin' / 'index.html').read_text(encoding='utf-8')
+    js = (ROOT / 'admin' / 'admin.js').read_text(encoding='utf-8')
+    assert 'cdn.jsdelivr.net/npm/@supabase/supabase-js' not in html
+    assert '/rest/v1/rpc/validate_cms_password' in js
+    assert 'AbortController' in js
+    assert 'catch' in js
+
+
+def test_publishable_key_is_not_sent_as_bearer_token():
+    js = (ROOT / 'admin' / 'admin.js').read_text(encoding='utf-8')
+    assert "'Authorization': `Bearer ${SUPABASE_KEY}`" not in js
+    assert "'apikey': SUPABASE_KEY" in js

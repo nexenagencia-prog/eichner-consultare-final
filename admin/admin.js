@@ -101,37 +101,60 @@
   const sectionsEl = document.querySelector('#sections');
   const sectionNav = document.querySelector('#sectionNav');
   const globalStatus = document.querySelector('#globalStatus');
-  let sb = null;
   let cmsKey = sessionStorage.getItem(SESSION_KEY) || '';
   let rows = [];
 
-  function makeClient(key) {
-    return window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-      global: { headers: { 'x-cms-key': key } },
-      auth: { persistSession: false, autoRefreshToken: false }
-    });
+  function apiHeaders(extra={}) {
+    return {
+      'apikey': SUPABASE_KEY,
+      'x-cms-key': cmsKey,
+      ...extra
+    };
+  }
+
+  async function fetchWithTimeout(url, options={}, timeoutMs=12000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, {...options, signal: controller.signal});
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   async function validateKey(key) {
-    const candidate = makeClient(key);
-    const { data, error } = await candidate.rpc('validate_cms_password', { p_key: key });
-    if (error || data !== true) return false;
-    sb = candidate;
-    return true;
+    const response = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/rpc/validate_cms_password`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_KEY,
+          'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({p_key:key})
+    });
+    if (!response.ok) throw new Error(`Falha de conexão com o CMS (${response.status}).`);
+    return (await response.json()) === true;
   }
 
   async function enterCMS(key) {
     const clean = String(key || '').trim();
     if (!clean) return setLoginStatus('Digite a senha.', true);
     setLoginStatus('Verificando…');
-    const ok = await validateKey(clean);
-    if (!ok) return setLoginStatus('Senha incorreta.', true);
-    cmsKey = clean;
-    sessionStorage.setItem(SESSION_KEY, clean);
-    loginView.hidden = true;
-    editorView.hidden = false;
-    setLoginStatus('');
-    await loadSections();
+    try {
+      const ok = await validateKey(clean);
+      if (!ok) return setLoginStatus('Senha incorreta.', true);
+      cmsKey = clean;
+      sessionStorage.setItem(SESSION_KEY, clean);
+      loginView.hidden = true;
+      editorView.hidden = false;
+      setLoginStatus('');
+      await loadSections();
+    } catch (error) {
+      console.error(error);
+      const message = error?.name === 'AbortError'
+        ? 'A conexão demorou demais. Tente novamente.'
+        : (error?.message || 'Não foi possível conectar ao CMS.');
+      setLoginStatus(message, true);
+    }
   }
 
   function setLoginStatus(text, error=false) {
@@ -148,12 +171,15 @@
 
   async function loadSections() {
     sectionsEl.innerHTML = '<div class="loading">Carregando conteúdo…</div>';
-    const { data, error } = await sb.from('site_content').select('*').order('sort_order');
-    if (error) {
+    try {
+      const response = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/site_content?select=*&order=sort_order.asc`, {headers:apiHeaders()});
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      rows = (data || []).filter(row => row.enabled && LIVE_ORDER.includes(row.section_key));
+    } catch (error) {
       sectionsEl.innerHTML = `<div class="loading">Erro ao carregar: ${escapeHTML(error.message)}</div>`;
       return;
     }
-    rows = (data || []).filter(row => row.enabled && LIVE_ORDER.includes(row.section_key));
     rows.sort((a,b) => LIVE_ORDER.indexOf(a.section_key) - LIVE_ORDER.indexOf(b.section_key));
     renderAll();
   }
@@ -272,13 +298,23 @@
     status.textContent = 'Enviando imagem…';
     const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
     const storagePath = `${row.section_key}/${Date.now()}-${cleanName}`;
-    const { error } = await sb.storage.from(STORAGE_BUCKET).upload(storagePath, file, { upsert:false, contentType:file.type || undefined });
-    if (error) {
+    let response;
+    try {
+      response = await fetchWithTimeout(`${SUPABASE_URL}/storage/v1/object/${STORAGE_BUCKET}/${storagePath}`, {
+        method:'POST',
+        headers:apiHeaders({'Content-Type':file.type || 'application/octet-stream','x-upsert':'false'}),
+        body:file
+      }, 30000);
+      if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(detail || `HTTP ${response.status}`);
+      }
+    } catch (error) {
       status.textContent = `Erro: ${error.message}`;
       status.className = 'upload-status status error';
       return;
     }
-    const { data:{ publicUrl } } = sb.storage.from(STORAGE_BUCKET).getPublicUrl(storagePath);
+    const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${storagePath.split('/').map(encodeURIComponent).join('/')}`;
     urlInput.value = publicUrl;
     preview.style.backgroundImage = `url("${publicUrl}")`;
     status.textContent = 'Imagem enviada. Salvando seção…';
@@ -293,8 +329,18 @@
     if (!options.quiet) status.textContent = 'Salvando…';
     const next = structuredClone(row.content || {});
     card.querySelectorAll('[data-path]').forEach(control => setPath(next, control.dataset.path, control.value));
-    const { error } = await sb.from('site_content').update({ content: next, updated_at: new Date().toISOString() }).eq('id', row.id);
-    if (error) {
+    let response;
+    try {
+      response = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/site_content?id=eq.${encodeURIComponent(row.id)}`, {
+        method:'PATCH',
+        headers:apiHeaders({'Content-Type':'application/json','Prefer':'return=minimal'}),
+        body:JSON.stringify({content:next,updated_at:new Date().toISOString()})
+      });
+      if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(detail || `HTTP ${response.status}`);
+      }
+    } catch (error) {
       status.textContent = `Erro: ${error.message}`;
       status.className = 'save-status status error';
       if (options.quiet) throw error;
