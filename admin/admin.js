@@ -145,7 +145,9 @@
       cmsKey = clean;
       sessionStorage.setItem(SESSION_KEY, clean);
       loginView.hidden = true;
+      loginView.style.display = 'none';
       editorView.hidden = false;
+      editorView.style.display = 'block';
       setLoginStatus('');
       await loadSections();
     } catch (error) {
