@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>CMS Eichner</title>
+  <meta name="robots" content="noindex,nofollow">
+  <link rel="stylesheet" href="/admin/admin.css">
+</head>
+<body>
+  <main class="app-shell">
+    <section id="loginView" class="login-wrap">
+      <div class="login-card">
+        <div class="mark">E</div>
+        <p class="eyebrow">EICHNER · CMS</p>
+        <h1>Editar o site</h1>
+        <p class="muted">Use a senha administrativa do CMS.</p>
+        <label class="field">
+          <span>Senha</span>
+          <input id="cmsKey" type="password" autocomplete="current-password" placeholder="Senha do CMS">
+        </label>
+        <button id="loginButton" class="primary full">Entrar</button>
+        <p id="loginStatus" class="status" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <section id="editorView" hidden>
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">EICHNER · CMS</p>
+          <h1>Conteúdo do site</h1>
+          <p class="muted">A ordem abaixo é a mesma ordem do site aprovado.</p>
+        </div>
+        <div class="top-actions">
+          <a class="secondary" href="/" target="_blank" rel="noopener">Ver site ↗</a>
+          <button id="logoutButton" class="secondary">Sair</button>
+        </div>
+      </header>
+
+      <div class="workspace">
+        <aside class="sidebar">
+          <div class="sidebar-head">Seções</div>
+          <nav id="sectionNav"></nav>
+        </aside>
+        <div class="content-area">
+          <div id="globalStatus" class="global-status" hidden></div>
+          <div id="sections"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="/admin/admin.js"></script>
+</body>
+</html>
